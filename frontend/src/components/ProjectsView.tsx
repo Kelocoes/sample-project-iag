@@ -1,26 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { Project, User, Task, Organization } from '../types';
-import { Plus, Users, DollarSign, Calendar, ExternalLink, Trash2, UserPlus, Building2 } from 'lucide-react';
+import { api } from '../api';
+import { Plus, Users, DollarSign, ExternalLink, Trash2, UserPlus, RefreshCw } from 'lucide-react';
 
-interface ProjectsViewProps {
-  projects: Project[];
-  users: User[];
-  organizations: Organization[];
-  tasks: Task[];
-  onCreateProject: (projectData: any) => void;
-  onDeleteProject: (projectId: number) => void;
-  onCreateUser: (userData: any) => void;
-}
+export const ProjectsView: React.FC = () => {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-export const ProjectsView: React.FC<ProjectsViewProps> = ({
-  projects,
-  users,
-  organizations,
-  tasks,
-  onCreateProject,
-  onDeleteProject,
-  onCreateUser,
-}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
 
@@ -28,20 +17,79 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [budget, setBudget] = useState(15000);
-  const [organizationId, setOrganizationId] = useState<number>(organizations[0]?.id ?? 1);
-  const [managerId, setManagerId] = useState<number>(users[0]?.id ?? 1);
+  const [organizationId, setOrganizationId] = useState<number>(1);
+  const [managerId, setManagerId] = useState<number>(1);
 
   // New User State
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState<'manager' | 'user'>('manager');
-  const [userOrgId, setUserOrgId] = useState<number>(organizations[0]?.id ?? 1);
+  const [userOrgId, setUserOrgId] = useState<number>(1);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [projectsData, usersData, orgsData, tasksData] = await Promise.all([
+        api.getProjects(),
+        api.getUsers(),
+        api.getOrganizations(),
+        api.getTasks(),
+      ]);
+      setProjects(projectsData);
+      setUsers(usersData);
+      setOrganizations(orgsData);
+      setTasks(tasksData);
+
+      if (orgsData.length > 0) {
+        setOrganizationId(orgsData[0].id);
+        setUserOrgId(orgsData[0].id);
+      }
+      if (usersData.length > 0) {
+        setManagerId(usersData[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading projects data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleCreateProject = async (projectData: any) => {
+    try {
+      await api.createProject(projectData);
+      loadData();
+    } catch (e) {
+      console.error('Error creating project:', e);
+    }
+  };
+
+  const handleDeleteProject = async (projectId: number) => {
+    try {
+      await api.deleteProject(projectId);
+      loadData();
+    } catch (e) {
+      console.error('Error deleting project:', e);
+    }
+  };
+
+  const handleCreateUser = async (userData: any) => {
+    try {
+      await api.createUser(userData);
+      loadData();
+    } catch (e) {
+      console.error('Error creating user:', e);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    onCreateProject({
+    handleCreateProject({
       title,
       description,
       budget,
@@ -59,7 +107,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
     e.preventDefault();
     if (!userName.trim() || !userEmail.trim()) return;
 
-    onCreateUser({
+    handleCreateUser({
       name: userName,
       email: userEmail,
       role: userRole,
@@ -75,6 +123,15 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   const openProjectDetails = (projectId: number) => {
     window.open(`/project/${projectId}`, '_blank');
   };
+
+  if (isLoading && projects.length === 0) {
+    return (
+      <div className="min-h-[400px] flex flex-col items-center justify-center text-slate-500 space-y-3 font-sans">
+        <RefreshCw className="w-7 h-7 animate-spin text-indigo-600" />
+        <span className="text-sm font-medium">Cargando proyectos y usuarios...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -128,7 +185,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
                       {proj.status}
                     </span>
                     <button
-                      onClick={() => onDeleteProject(proj.id)}
+                      onClick={() => handleDeleteProject(proj.id)}
                       className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
                       title="Eliminar proyecto y sus tareas (Sin confirmación)"
                     >

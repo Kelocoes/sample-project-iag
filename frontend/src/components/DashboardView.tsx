@@ -1,45 +1,83 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { User, Project, DashboardMetrics, Organization } from '../types';
-import { FolderKanban, CheckCircle2, Clock, Users, ArrowUpRight, Building2, Trash2, Plus } from 'lucide-react';
+import { api } from '../api';
+import { FolderKanban, CheckCircle2, Users, ArrowUpRight, Building2, Trash2, Plus, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface DashboardViewProps {
-  metrics: DashboardMetrics | null;
-  projects: Project[];
-  organizations: Organization[];
   currentUser: User;
-  onDeleteOrganization: (orgId: number) => void;
-  onCreateOrganization: (orgData: any) => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({
-  metrics,
-  projects,
-  organizations,
-  currentUser,
-  onDeleteOrganization,
-  onCreateOrganization,
-}) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser }) => {
   const navigate = useNavigate();
 
-  const [isOrgModalOpen, setIsOrgModalOpen] = React.useState(false);
-  const [orgName, setOrgName] = React.useState('');
-  const [orgDesc, setOrgDesc] = React.useState('');
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleCreateOrgSubmit = (e: React.FormEvent) => {
+  const [isOrgModalOpen, setIsOrgModalOpen] = useState(false);
+  const [orgName, setOrgName] = useState('');
+  const [orgDesc, setOrgDesc] = useState('');
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [metricsData, orgsData, projectsData] = await Promise.all([
+        api.getDashboardMetrics(),
+        api.getOrganizations(),
+        api.getProjects(),
+      ]);
+      setMetrics(metricsData);
+      setOrganizations(orgsData);
+      setProjects(projectsData);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleCreateOrgSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgName) return;
 
-    onCreateOrganization({
-      name: orgName,
-      description: orgDesc,
-      adminOwnerId: currentUser.id,
-    });
-
-    setOrgName('');
-    setOrgDesc('');
-    setIsOrgModalOpen(false);
+    try {
+      await api.createOrganization({
+        name: orgName,
+        description: orgDesc,
+        adminOwnerId: currentUser.id,
+      });
+      setOrgName('');
+      setOrgDesc('');
+      setIsOrgModalOpen(false);
+      loadData();
+    } catch (error) {
+      console.error('Error creating organization:', error);
+    }
   };
+
+  const handleDeleteOrganization = async (orgId: number) => {
+    try {
+      await api.deleteOrganization(orgId);
+      loadData();
+    } catch (error) {
+      console.error('Error deleting organization:', error);
+    }
+  };
+
+  if (isLoading && !metrics) {
+    return (
+      <div className="min-h-[400px] flex flex-col items-center justify-center text-slate-500 space-y-3 font-sans">
+        <RefreshCw className="w-7 h-7 animate-spin text-indigo-600" />
+        <span className="text-sm font-medium">Cargando métricas y proyectos...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -114,7 +152,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     Organización #{org.id}
                   </span>
                   <button
-                    onClick={() => onDeleteOrganization(org.id)}
+                    onClick={() => handleDeleteOrganization(org.id)}
                     className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
                     title="Eliminar organización (sin confirmación)"
                   >

@@ -1,31 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import type { Task, User, Project } from '../types';
-import { Plus, Clock, Calendar, User as UserIcon, Trash2, X, CheckCircle2, ChevronRight } from 'lucide-react';
+import { api } from '../api';
+import { Plus, Clock, Calendar, User as UserIcon, Trash2, X, CheckCircle2, ChevronRight, RefreshCw } from 'lucide-react';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 
-interface KanbanViewProps {
-  tasks: Task[];
-  projects: Project[];
-  users: User[];
-  onUpdateTaskStatus: (taskId: number, newStatus: Task['status']) => void;
-  onUpdateTaskDetails: (taskId: number, updatedData: Partial<Task>) => void;
-  onDeleteTask: (taskId: number) => void;
-  onCreateTask: (taskData: any) => void;
-}
-
-export const KanbanView: React.FC<KanbanViewProps> = ({
-  tasks,
-  projects,
-  users,
-  onUpdateTaskStatus,
-  onUpdateTaskDetails,
-  onDeleteTask,
-  onCreateTask,
-}) => {
+export const KanbanView: React.FC = () => {
   const { taskId: taskIdParam } = useParams<{ taskId?: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedProjectId = searchParams.get('projectId');
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -46,16 +34,43 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
   // Create Modal Form States
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newProjectId, setNewProjectId] = useState<number>(
-    selectedProjectId ? parseInt(selectedProjectId, 10) : projects[0]?.id ?? 1
-  );
-  const [newAssigneeId, setNewAssigneeId] = useState<number>(users[0]?.id ?? 1);
+  const [newProjectId, setNewProjectId] = useState<number>(1);
+  const [newAssigneeId, setNewAssigneeId] = useState<number>(1);
   const [newPriority, setNewPriority] = useState<Task['priority']>('medium');
   const [newEstimatedHours, setNewEstimatedHours] = useState(4);
   const [newDueDate, setNewDueDate] = useState('2026-08-30');
 
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [tasksData, projectsData, usersData] = await Promise.all([
+        api.getTasks(),
+        api.getProjects(),
+        api.getUsers(),
+      ]);
+      setTasks(tasksData);
+      setProjects(projectsData);
+      setUsers(usersData);
+
+      if (projectsData.length > 0) {
+        setNewProjectId(selectedProjectId ? parseInt(selectedProjectId, 10) : projectsData[0].id);
+      }
+      if (usersData.length > 0) {
+        setNewAssigneeId(usersData[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading Kanban data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (taskIdParam) {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (taskIdParam && tasks.length > 0) {
       const numericId = parseInt(taskIdParam, 10);
       const found = tasks.find((t) => t.id === numericId);
       if (found) {
@@ -70,10 +85,46 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
         setPanelActualHours(found.actualHours || 0);
         setPanelDueDate(found.dueDate || '');
       }
-    } else {
+    } else if (!taskIdParam) {
       setSelectedTask(null);
     }
   }, [taskIdParam, tasks, users]);
+
+  const handleUpdateTaskStatus = async (taskId: number, newStatus: Task['status']) => {
+    try {
+      await api.updateTask(taskId, { status: newStatus });
+      loadData();
+    } catch (e) {
+      console.error('Error updating task status:', e);
+    }
+  };
+
+  const handleUpdateTaskDetails = async (taskId: number, updatedData: Partial<Task>) => {
+    try {
+      await api.updateTask(taskId, updatedData);
+      loadData();
+    } catch (e) {
+      console.error('Error updating task details:', e);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    try {
+      await api.deleteTask(taskId);
+      loadData();
+    } catch (e) {
+      console.error('Error deleting task:', e);
+    }
+  };
+
+  const handleCreateTask = async (taskData: any) => {
+    try {
+      await api.createTask(taskData);
+      loadData();
+    } catch (e) {
+      console.error('Error creating task:', e);
+    }
+  };
 
   const handleTaskCardClick = (t: Task) => {
     const query = selectedProjectId ? `?projectId=${selectedProjectId}` : '';
@@ -88,7 +139,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
 
   const handleSavePanelDetails = () => {
     if (!selectedTask) return;
-    onUpdateTaskDetails(selectedTask.id, {
+    handleUpdateTaskDetails(selectedTask.id, {
       title: panelTitle,
       description: panelDescription,
       status: panelStatus,
@@ -105,7 +156,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    onCreateTask({
+    handleCreateTask({
       title: newTitle,
       description: newDescription,
       status: 'todo',
@@ -167,9 +218,18 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
     setActiveOverColumn(null);
     const taskIdStr = e.dataTransfer.getData('text/plain');
     if (taskIdStr) {
-      onUpdateTaskStatus(parseInt(taskIdStr, 10), targetStatus);
+      handleUpdateTaskStatus(parseInt(taskIdStr, 10), targetStatus);
     }
   };
+
+  if (isLoading && tasks.length === 0) {
+    return (
+      <div className="min-h-[400px] flex flex-col items-center justify-center text-slate-500 space-y-3 font-sans">
+        <RefreshCw className="w-7 h-7 animate-spin text-indigo-600" />
+        <span className="text-sm font-medium">Cargando tablero Kanban...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex w-full max-w-full gap-6 overflow-x-hidden">
@@ -270,7 +330,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              onDeleteTask(t.id);
+                              handleDeleteTask(t.id);
                             }}
                             className="text-slate-400 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100 p-1 shrink-0"
                             title="Eliminar tarea sin confirmación"
@@ -368,7 +428,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                 onChange={(e) => {
                   const newSt = e.target.value as Task['status'];
                   setPanelStatus(newSt);
-                  onUpdateTaskStatus(selectedTask.id, newSt);
+                  handleUpdateTaskStatus(selectedTask.id, newSt);
                 }}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 font-medium"
               >
@@ -388,7 +448,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                 onChange={(e) => {
                   const newAssId = Number(e.target.value);
                   setPanelAssigneeId(newAssId);
-                  onUpdateTaskDetails(selectedTask.id, { assigneeId: newAssId });
+                  handleUpdateTaskDetails(selectedTask.id, { assigneeId: newAssId });
                 }}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500"
               >
@@ -410,7 +470,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                   onChange={(e) => {
                     const newPrio = e.target.value as Task['priority'];
                     setPanelPriority(newPrio);
-                    onUpdateTaskDetails(selectedTask.id, { priority: newPrio });
+                    handleUpdateTaskDetails(selectedTask.id, { priority: newPrio });
                   }}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500"
                 >
@@ -430,7 +490,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                   onChange={(e) => {
                     const newProjId = Number(e.target.value);
                     setPanelProjectId(newProjId);
-                    onUpdateTaskDetails(selectedTask.id, { projectId: newProjId });
+                    handleUpdateTaskDetails(selectedTask.id, { projectId: newProjId });
                   }}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500"
                 >
@@ -471,7 +531,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                   value={panelDueDate}
                   onChange={(e) => {
                     setPanelDueDate(e.target.value);
-                    onUpdateTaskDetails(selectedTask.id, { dueDate: e.target.value });
+                    handleUpdateTaskDetails(selectedTask.id, { dueDate: e.target.value });
                   }}
                   className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-slate-800 text-xs font-mono"
                 />
@@ -496,7 +556,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
           <div className="border-t border-slate-200 pt-3 flex items-center justify-between">
             <button
               onClick={() => {
-                onDeleteTask(selectedTask.id);
+                handleDeleteTask(selectedTask.id);
                 closeSidePanel();
               }}
               className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1"

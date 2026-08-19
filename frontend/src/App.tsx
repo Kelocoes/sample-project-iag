@@ -1,4 +1,4 @@
-import type { User, Project, Task, DashboardMetrics, Organization } from './types';
+import type { User } from './types';
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { api } from './api';
@@ -11,131 +11,32 @@ import { LayoutDashboard, Kanban, FolderKanban, LogOut, RefreshCw } from 'lucide
 
 export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  
-  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const [metricsData, orgsData, projectsData, tasksData, usersData] = await Promise.all([
-        api.getDashboardMetrics(),
-        api.getOrganizations(),
-        api.getProjects(),
-        api.getTasks(),
-        api.getUsers(),
-      ]);
-
-      setMetrics(metricsData);
-      setOrganizations(orgsData);
-      setProjects(projectsData);
-      setTasks(tasksData);
-      setUsers(usersData);
-
-      if (!currentUser && usersData.length > 0) {
-        setCurrentUser(usersData[0]);
-      }
-    } catch (error) {
-      console.error('Error loading API data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Initial light fetch: only load users for session/login
   useEffect(() => {
-    loadData();
+    const initAuth = async () => {
+      try {
+        const usersData = await api.getUsers();
+        setUsers(usersData);
+        if (usersData.length > 0) {
+          setCurrentUser(usersData[0]);
+        }
+      } catch (error) {
+        console.error('Error loading users for auth:', error);
+      } finally {
+        setIsLoadingAuth(false);
+      }
+    };
+    initAuth();
   }, []);
 
-  const handleUpdateTaskStatus = async (taskId: number, newStatus: Task['status']) => {
-    try {
-      await api.updateTask(taskId, { status: newStatus });
-      loadData();
-    } catch (e) {
-      console.error('Error updating task status:', e);
-    }
-  };
-
-  const handleUpdateTaskDetails = async (taskId: number, updatedData: Partial<Task>) => {
-    try {
-      await api.updateTask(taskId, updatedData);
-      loadData();
-    } catch (e) {
-      console.error('Error updating task details:', e);
-    }
-  };
-
-  const handleDeleteTask = async (taskId: number) => {
-    try {
-      await api.deleteTask(taskId);
-      loadData();
-    } catch (e) {
-      console.error('Error deleting task:', e);
-    }
-  };
-
-  const handleCreateTask = async (taskData: any) => {
-    try {
-      await api.createTask(taskData);
-      loadData();
-    } catch (e) {
-      console.error('Error creating task:', e);
-    }
-  };
-
-  const handleCreateProject = async (projectData: any) => {
-    try {
-      await api.createProject(projectData);
-      loadData();
-    } catch (e) {
-      console.error('Error creating project:', e);
-    }
-  };
-
-  const handleDeleteProject = async (projectId: number) => {
-    try {
-      await api.deleteProject(projectId);
-      loadData();
-    } catch (e) {
-      console.error('Error deleting project:', e);
-    }
-  };
-
-  const handleCreateOrganization = async (orgData: any) => {
-    try {
-      await api.createOrganization(orgData);
-      loadData();
-    } catch (e) {
-      console.error('Error creating organization:', e);
-    }
-  };
-
-  const handleDeleteOrganization = async (orgId: number) => {
-    try {
-      await api.deleteOrganization(orgId);
-      loadData();
-    } catch (e) {
-      console.error('Error deleting organization:', e);
-    }
-  };
-
-  const handleCreateUser = async (userData: any) => {
-    try {
-      await api.createUser(userData);
-      loadData();
-    } catch (e) {
-      console.error('Error creating user:', e);
-    }
-  };
-
-  if (isLoading && projects.length === 0) {
+  if (isLoadingAuth) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-500 space-y-4 font-sans">
         <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
-        <span className="text-sm font-medium">Cargando plataforma de gestión...</span>
+        <span className="text-sm font-medium">Iniciando aplicación...</span>
       </div>
     );
   }
@@ -245,59 +146,11 @@ export function App() {
                     <Route path="/" element={<Navigate to="/dashboard" replace />} />
                     <Route
                       path="/dashboard"
-                      element={
-                        <DashboardView
-                          metrics={metrics}
-                          projects={projects}
-                          organizations={organizations}
-                          currentUser={currentUser!}
-                          onDeleteOrganization={handleDeleteOrganization}
-                          onCreateOrganization={handleCreateOrganization}
-                        />
-                      }
+                      element={<DashboardView currentUser={currentUser!} />}
                     />
-                    <Route
-                      path="/kanban"
-                      element={
-                        <KanbanView
-                          tasks={tasks}
-                          projects={projects}
-                          users={users}
-                          onUpdateTaskStatus={handleUpdateTaskStatus}
-                          onUpdateTaskDetails={handleUpdateTaskDetails}
-                          onDeleteTask={handleDeleteTask}
-                          onCreateTask={handleCreateTask}
-                        />
-                      }
-                    />
-                    <Route
-                      path="/kanban/task/:taskId"
-                      element={
-                        <KanbanView
-                          tasks={tasks}
-                          projects={projects}
-                          users={users}
-                          onUpdateTaskStatus={handleUpdateTaskStatus}
-                          onUpdateTaskDetails={handleUpdateTaskDetails}
-                          onDeleteTask={handleDeleteTask}
-                          onCreateTask={handleCreateTask}
-                        />
-                      }
-                    />
-                    <Route
-                      path="/projects"
-                      element={
-                        <ProjectsView
-                          projects={projects}
-                          users={users}
-                          organizations={organizations}
-                          tasks={tasks}
-                          onCreateProject={handleCreateProject}
-                          onDeleteProject={handleDeleteProject}
-                          onCreateUser={handleCreateUser}
-                        />
-                      }
-                    />
+                    <Route path="/kanban" element={<KanbanView />} />
+                    <Route path="/kanban/task/:taskId" element={<KanbanView />} />
+                    <Route path="/projects" element={<ProjectsView />} />
                   </Routes>
                 </main>
               </div>
